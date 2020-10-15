@@ -9,7 +9,7 @@ from typing import Dict
 from decouple import config as get_config
 from errbot import botcmd
 from errbot import BotPlugin
-from pendulum import parse_time
+from pendulum import parse
 from wrapt import synchronized
 
 CAL_LOCK = RLock()
@@ -28,7 +28,7 @@ def get_config_item(
         config[key] = get_config(key, **decouple_kwargs)
 
 
-class Webserver(BotPlugin):
+class ChannelMonitor(BotPlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -43,7 +43,7 @@ class Webserver(BotPlugin):
         # name of the channel to post in
         get_config_item("CHANMON_CHANNEL", configuration, default="")
         configuration["CHANMON_CHANNEL_ID"] = (
-            self._build_identifier(configuration["CHANMON_CHANNEL"])
+            self.build_identifier(configuration["CHANMON_CHANNEL"])
             if configuration["CHANMON_CHANNEL"] != ""
             else None
         )
@@ -77,7 +77,7 @@ class Webserver(BotPlugin):
         action = "create"
         self._log_channel_change(
             channel_name=f"#{msg['channel']['name']}",
-            user_name=self._get_user_name(msg["channel"]["creator"]),
+            user_name=f"@{self._get_user_name(msg['channel']['creator'])}",
             action=action,
             timestamp=msg["channel"]["created"],
         )
@@ -86,8 +86,8 @@ class Webserver(BotPlugin):
         """Received the callback from the SlackExtendedBackend for channel_archive"""
         action = "archive"
         self._log_channel_change(
-            channel_name=self._get_channel_name(msg["channel"]),
-            user_name=self._get_user_name(msg["user"]),
+            channel_name=f"#{self._get_channel_name(msg['channel'])}",
+            user_name=f"@{self._get_user_name(msg['user'])}",
             action=action,
             timestamp=mktime(datetime.now().timetuple()),
         )
@@ -96,7 +96,7 @@ class Webserver(BotPlugin):
         """Received the callback from the SlackExtendedBackend for channel_deleted"""
         action = "delete"
         self._log_channel_change(
-            channel_name=msg["channel"],
+            channel_name=f"#{self._get_channel_name(msg['channel'])}",
             user_name=None,
             action=action,
             timestamp=mktime(datetime.now().timetuple()),
@@ -106,8 +106,8 @@ class Webserver(BotPlugin):
         """Received the callback from the SlackExtendedBackend for channel_unarchive"""
         action = "unarchive"
         self._log_channel_change(
-            channel_name=self._get_channel_name(msg["channel"]),
-            user_name=self._get_user_name(msg["user"]),
+            channel_name=f"#{self._get_channel_name(msg['channel'])}",
+            user_name=f"@{self._get_user_name(msg['user'])}",
             action=action,
             timestamp=mktime(datetime.now().timetuple()),
         )
@@ -143,21 +143,17 @@ class Webserver(BotPlugin):
             "string_repr": f"{timestamp}: {channel} was {action}'d by {user}",
         }
 
-    @lru_cache
     def _get_channel_name(self, channel: str) -> str:
         """Returns a channel name from a channel id. Loose wrapper around channelid_to_channelname with a LRU cache"""
         return self._bot.channelid_to_channelname(channel)
 
-    @lru_cache
     def _get_user_name(self, user: str) -> str:
         """Returns a username from a userid. Loose wrapper around userid_to_username with a LRU cache"""
         return self._bot.userid_to_username(user)
 
-    def _send_log_to_slack(
-        self, channel: str, user: str, action: str, timestamp: str
-    ) -> None:
+    def _send_log_to_slack(self, log: Dict) -> None:
         """Sends a log to a slack channel"""
-        return
+        self.send(self.config["CHANMON_CHANNEL_ID"], log["string_repr"])
 
     # Poller methods
     @synchronized(CAL_LOCK)
@@ -165,7 +161,7 @@ class Webserver(BotPlugin):
         """Prunes our on-disk logs"""
 
         first_key = next(iter(self["channel_action_log"]))
-        if datime.now() - parse_time(first_key) > datetime.timedelta(days=days_to_keep):
+        if datime.now() - parse(first_key) > datetime.timedelta(days=days_to_keep):
             with synchronized(CAL_LOCK):
                 cal_log = self["channel_action_log"]
                 cal_log.pop(first_key, None)
