@@ -1,15 +1,19 @@
 from collections import OrderedDict
 from datetime import datetime
+from datetime import timedelta
 from functools import lru_cache
 from threading import RLock
 from time import mktime
 from typing import Any
 from typing import Dict
+from typing import List
 
 from decouple import config as get_config
+from errbot import arg_botcmd
 from errbot import botcmd
 from errbot import BotPlugin
 from pendulum import parse
+from pytz import UTC
 from wrapt import synchronized
 
 CAL_LOCK = RLock()
@@ -71,6 +75,22 @@ class ChannelMonitor(BotPlugin):
         self.stop_poller(self._log_janitor, args=(self.config["CHANMON_LOG_DAYS"]))
         super().deactivate()
 
+    @botcmd(admin_only=True)
+    def print_channel_log(self, msg, _) -> None:
+        logs_text = self._get_logs_text(self["channel_action_log"])
+        self.log.debug("Got logs text of %i length", len(logs_text))
+        if len(logs_text) == 0:
+            yield "No logs"
+        for log in logs_text:
+            yield log
+
+    @botcmd(admin_only=True)
+    @arg_botcmd("day_count", type=int)
+    def run_log_cleaner(self, msg, day_count: int) -> str:
+        self.warn_admins(f"{msg.frm} is clearing Channel Monitor logs for {day_count}")
+        self._log_janitor(day_count)
+        return "Log cleanup complete"
+
     # Callbacks
     def callback_channel_created(self, msg: Dict) -> None:
         """Received the callback from the SlackExtendedBackend for channel_created"""
@@ -131,9 +151,8 @@ class ChannelMonitor(BotPlugin):
                 chan_log[today].append(log)
             self["channel_action_log"] = chan_log
 
-        return
-
-    def _build_log(self, channel: str, user: str, action: str, timestamp: str) -> Dict:
+    @staticmethod
+    def _build_log(channel: str, user: str, action: str, timestamp: str) -> Dict:
         """Builds a log dict"""
         return {
             "channel": channel,
@@ -142,6 +161,17 @@ class ChannelMonitor(BotPlugin):
             "timestamp": timestamp,
             "string_repr": f"{timestamp}: {channel} was {action}'d by {user}",
         }
+
+    @staticmethod
+    def _get_logs_text(logs: Dict) -> List[str]:
+        """Turns a dict of lists into a printable slack log table"""
+        days = list()
+        for day, logs in logs.items():
+            logs_str_reprs = [log["string_repr"] for log in logs]
+            logs_str = "\n".join(logs_str_reprs)
+            days.append(f"*{day}*\n{logs_str}")
+
+        return days
 
     def _get_channel_name(self, channel: str) -> str:
         """Returns a channel name from a channel id. Loose wrapper around channelid_to_channelname with a LRU cache"""
@@ -159,10 +189,17 @@ class ChannelMonitor(BotPlugin):
     @synchronized(CAL_LOCK)
     def _log_janitor(self, days_to_keep: int) -> None:
         """Prunes our on-disk logs"""
-
         first_key = next(iter(self["channel_action_log"]))
-        if datime.now() - parse(first_key) > datetime.timedelta(days=days_to_keep):
+        if UTC.localize(datetime.utcnow()) - parse(first_key) > timedelta(
+            days=days_to_keep
+        ):
             with synchronized(CAL_LOCK):
                 cal_log = self["channel_action_log"]
                 cal_log.pop(first_key, None)
                 self["channel_action_log"] = cal_log
+
+        cal_log = self["channel_action_log"]
+        for key in cal_log.keys():
+            if len(cal_log[key]) == 0:
+                cal_log.pop(key)
+        self["channel_action_log"] = cal_log
