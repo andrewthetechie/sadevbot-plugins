@@ -1,7 +1,6 @@
 from collections import OrderedDict
 from datetime import datetime
 from datetime import timedelta
-from functools import lru_cache
 from threading import RLock
 from time import mktime
 from typing import Any
@@ -64,7 +63,10 @@ class ChannelMonitor(BotPlugin):
             try:
                 self["channel_action_log"]
             except KeyError:
-                self["channel_action_log"] = dict()
+                self["channel_action_log"] = {
+                    datetime.now().strftime("%Y-%m-%d"): list()
+                }
+
         self.start_poller(
             self.config["CHANMON_LOG_JANITOR_INTERVAL"],
             self._log_janitor,
@@ -199,7 +201,8 @@ class ChannelMonitor(BotPlugin):
                 self["channel_action_log"] = cal_log
 
         cal_log = self["channel_action_log"]
+        today = datetime.now().strftime("%Y-%m-%d")
         for key in cal_log.keys():
-            if len(cal_log[key]) == 0:
+            if len(cal_log[key]) == 0 and key != today:
                 cal_log.pop(key)
         self["channel_action_log"] = cal_log
