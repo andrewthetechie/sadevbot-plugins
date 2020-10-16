@@ -1,0 +1,9 @@
+[Core]
+Name = ChannelMonitor
+Module = channel-monitor
+
+[Documentation]
+Description = Monitors channel creation and deletion and outputs a log to a slack channel.
+
+[Python]
+Version = 3
