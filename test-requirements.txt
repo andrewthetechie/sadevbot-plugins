@@ -5,3 +5,4 @@ pytest-xdist
 coverage
 
 -r LocalWebserver/requirements.txt
+-r ChannelMonitor/requirements.txt
