@@ -1,4 +1,3 @@
 pendulum
 python-decouple
 pytz
-wrapt>=1.12.1

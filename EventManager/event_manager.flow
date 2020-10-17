@@ -1,0 +1,9 @@
+[Core]
+Name = EventManager
+Module = event_manager
+
+[Documentation]
+Description = Manages events for SaDevs. Message me with ./new event to input a new event!
+
+[Python]
+Version = 3
